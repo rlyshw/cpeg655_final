@@ -35,6 +35,7 @@ __global__ void dft(double*x, double*Xre, double*Xim){
 		temp2 -= x[n] * sin(n*k*(M_PI*2) / N);
 		n+=N; k+=N;
 	}
+
 	cache[cacheIndex] = temp1;
 	cache[cacheIndex+blockDim.x] = temp2;
 	__syncthreads();
@@ -50,6 +51,29 @@ __global__ void dft(double*x, double*Xre, double*Xim){
 	if(cacheIndex == 0){
 		Xre[blockIdx.x] = cache[0];
 		Xim[blockIdx.x] = cache[blockDim.x];}
+}
+
+/*
+Serial DFT
+for (k = 0; k < N; k++)
+{
+    Xre[k] = 0;
+      Xim[k] = 0;
+        for (n = 0; n < N; n++)
+            { 
+                 Xre[k] += x[n] * cos(n * k * TWOPI / N);
+                 Xim[k] -= x[n] * sin(n * k * TWOPI / N);
+            }
+}
+*/
+
+__global__ void blockSum(double*Xre, double*Xim){
+
+  for (n = 0; n < N; n++){  
+    Xre += x[n] * cos(n*k*(M_PI*2) / N);
+    Xim -= x[n] * sin(n*k(M_PI*2) / N);
+  }
+
 }
 
 int main(){
