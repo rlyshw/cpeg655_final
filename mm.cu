@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #define N 22 
+#define threadsPerBlock 9
 
 __global__ void MatrixMultiply(float *d_A, float *d_B, float *d_C)
 {
@@ -21,55 +23,86 @@ __global__ void MatrixMultiply(float *d_A, float *d_B, float *d_C)
 	d_C[ty*N + tx]= Cvalue;
 }
 
+__global__ void dft(double*x, double*Xre, double*Xim){
+	__shared__ double cache[2*N];
+	int n = threadIdx.x, k=blockIdx.x, cacheIndex = threadIdx.x;
+//	Matrix computation for Xim and Xre
+	double temp1=0,temp2=0;
+	while(n<N && k<N){
+		temp1 += x[n] * cos(n*k*(M_PI*2) / N);
+		temp2 -= x[n] * sin(n*k*(M_PI*2) / N);
+		n+=N; k+=N;
+	}
+	cache[cacheIndex] = temp1;
+	cache[cacheIndex+blockDim.x] = temp2;
+	__syncthreads();
+	
+	int i =blockDim.x/2;
+	while(i!=0){
+	if(cacheIndex<i){
+		cache[cacheIndex]+=cache[cacheIndex+i];
+		cache[blockDim.x+cacheIndex]+=cache[blockDim.x+cacheIndex+i];}
+	__syncthreads();
+	i/=2;
+	}
+	if(cacheIndex == 0){
+		Xre[blockIdx.x] = cache[0];
+		Xim[blockIdx.x] = cache[blockDim.x];}
+}
+
 int main(){
 
-	int i,j,k;
+	int i,j;
 	
-	float *d_A, *d_B, *d_C;	
-	float *h_A, *h_B, *h_C;
+	double *d_X, *d_Xre, *d_Xim;	
+	double *h_X, *h_Xre, *h_Xim;
 
-	size_t size = N*N*sizeof(float);
+	size_t size = N*sizeof(double);
 
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
 	//Allocate Device memory
-	cudaMalloc((void **)&d_A, size);
-	cudaMalloc((void **)&d_B, size);
-	cudaMalloc((void **)&d_C, size);
+	cudaMalloc((void **)&d_X, size);
+	cudaMalloc((void **)&d_Xre, size);
+	cudaMalloc((void **)&d_Xim, size);
 
 	//Allocate Host memory
-	cudaMallocHost((void **)&h_A, size);
-	cudaMallocHost((void **)&h_B, size);	
-	cudaMallocHost((void **)&h_C, size);
+	cudaMallocHost((void **)&h_X, size);
+	cudaMallocHost((void **)&h_Xre, size);	
+	cudaMallocHost((void **)&h_Xim, size);
 
 	
 	//Initialize matrices on the host
 	for(i=0;i<N;i++){
 	    for(j=0;j<N;j++){
-		h_A[i*N+j]=i;
-		h_B[i*N+j]=i+1;
+		h_X[i*N+j]=i;
 	    }
 	}
 
 
-	//Allocate A and B to the Device
-	cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
+	//Allocate X to the Device
+	cudaMemcpy(d_X, h_X, size, cudaMemcpyHostToDevice);
+	//cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
 
 
 	//Invoke kernel
-	dim3 blockPerGrid(1,1);
-	dim3 threadPerBlock(N,N);
+	dim3 blockPerGrid(N,1);
+	dim3 threadPerBlock(N,1);
+
+	//cudaEventRecord(start);	
+	//MatrixMultiply<<<blockPerGrid, threadPerBlock>>>(d_A, d_B, d_C);
+	//cudaEventRecord(stop);	
 
 	cudaEventRecord(start);	
-	MatrixMultiply<<<blockPerGrid, threadPerBlock>>>(d_A, d_B, d_C);
+	dft<<<blockPerGrid, threadPerBlock>>>(d_X, d_Xre, d_Xim);
 	cudaEventRecord(stop);	
 
 
-	//Read C from device
-	cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
+	//Read from device
+	cudaMemcpy(h_Xre, d_Xre, size, cudaMemcpyDeviceToHost);
+	cudaMemcpy(h_Xim, d_Xim, size, cudaMemcpyDeviceToHost);
 	
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
@@ -78,44 +111,40 @@ int main(){
 	
 	//Calculate the MM result with normal CPU implementation and compare the results with the GPU
 
-	float * test_C;
-	test_C = (float *)malloc(size);	
-	for (i=0; i<N; i++){
-		for (j=0;j<N;j++){
-			float sum = 0;
-			for (k=0;k<N;k++){
-				float a = h_A[i*N+k];
-				float b = h_B[k*N+j];
-				sum += a*b;
-			}
-			test_C[i*N+j]= sum;
+	float * test_Xre;
+	float * test_Xim;
+	test_Xre = (float *)malloc(size);	
+	test_Xim = (float *)malloc(size);	
+	for (int k=0;k<N;k++){
+		test_Xre[k]=0;
+		test_Xim[k]=0;
+		for(int n=0;n<N;n++){
+			test_Xre[k]+=h_X[n]*cos(n*k*M_PI*2 / N);
+			test_Xim[k]+=h_X[n]*cos(n*k*M_PI*2 / N);
 		}
 	}
-	int compare = 0;
+	int compare_Xre = 0;
+	int compare_Xim = 0;
 	for(i=0;i<N;i++){
-		for(j=0;j<N;j++){
-			if (test_C[i*N+j]==h_C[i*N+j]){
-				compare++;
-			}else{
-				compare+=0;
-			}
-		}
+		if(test_Xre[i]==h_Xre[i]) compare_Xre++;
+		if(test_Xim[i]==h_Xim[i]) compare_Xim++;
 	}
-	if(compare == N*N){
-		//printf("Success!\n");
+	if(compare_Xre == N && compare_Xim==N){
+		printf("Success!\n");
 	}else{
-		//printf("Error!\n");	
+		printf("Error!\n");	
 	}
 
 	/*=============================Finish Test=================================*/
 
-	free(test_C);
-	cudaFree(d_A);
-	cudaFree(d_B);
-	cudaFree(d_C);
-	cudaFree(h_A);
-	cudaFree(h_B);
-	cudaFree(h_C);
+	free(test_Xre);
+	free(test_Xim);
+	cudaFree(d_X);
+	cudaFree(d_Xre);
+	cudaFree(d_Xim);
+	cudaFree(h_X);
+	cudaFree(h_Xre);
+	cudaFree(h_Xim);
 	cudaDeviceReset();
 	return EXIT_SUCCESS;
 }
