@@ -24,6 +24,8 @@ __global__ void MatrixMultiply(float *d_A, float *d_B, float *d_C)
 }
 
 __global__ void dft(double*x, double*Xre, double*Xim){
+	//Credit to Shengfeng Chen from 
+	//https://cs.wmich.edu/gupta/teaching/cs5260/5260Sp15web/studentProjects/IMPLEMENTATION%20of%20DFT%20in%20CPU%20and%20GPU%20by%20Shengfeng.pdf
 	__shared__ double cache[2*N];
 	int n = threadIdx.x, k=blockIdx.x, cacheIndex = threadIdx.x;
 //	Matrix computation for Xim and Xre
