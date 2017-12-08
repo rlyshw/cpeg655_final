@@ -23,6 +23,16 @@ __global__ void MatrixMultiply(float *d_A, float *d_B, float *d_C)
 	d_C[ty*N + tx]= Cvalue;
 }
 
+uint32_t reverse(uint32_t x)
+{
+    x = ((x >> 1) & 0x55555555u) | ((x & 0x55555555u) << 1);
+    x = ((x >> 2) & 0x33333333u) | ((x & 0x33333333u) << 2);
+    x = ((x >> 4) & 0x0f0f0f0fu) | ((x & 0x0f0f0f0fu) << 4);
+    x = ((x >> 8) & 0x00ff00ffu) | ((x & 0x00ff00ffu) << 8);
+    x = ((x >> 16) & 0xffffu) | ((x & 0xffffu) << 16);
+    return x;
+}
+
 __global__ void dft(double*x, double*Xre, double*Xim){
 	//Credit to Shengfeng Chen from 
 	//https://cs.wmich.edu/gupta/teaching/cs5260/5260Sp15web/studentProjects/IMPLEMENTATION%20of%20DFT%20in%20CPU%20and%20GPU%20by%20Shengfeng.pdf
@@ -51,29 +61,6 @@ __global__ void dft(double*x, double*Xre, double*Xim){
 	if(cacheIndex == 0){
 		Xre[blockIdx.x] = cache[0];
 		Xim[blockIdx.x] = cache[blockDim.x];}
-}
-
-/*
-Serial DFT
-for (k = 0; k < N; k++)
-{
-    Xre[k] = 0;
-      Xim[k] = 0;
-        for (n = 0; n < N; n++)
-            { 
-                 Xre[k] += x[n] * cos(n * k * TWOPI / N);
-                 Xim[k] -= x[n] * sin(n * k * TWOPI / N);
-            }
-}
-*/
-
-__global__ void blockSum(double*Xre, double*Xim){
-
-  for (n = 0; n < N; n++){  
-    Xre += x[n] * cos(n*k*(M_PI*2) / N);
-    Xim -= x[n] * sin(n*k(M_PI*2) / N);
-  }
-
 }
 
 int main(){
