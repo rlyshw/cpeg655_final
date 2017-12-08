@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define N 22 
+#define N 22
 #define threadsPerBlock 9
 
 __global__ void MatrixMultiply(float *d_A, float *d_B, float *d_C)
@@ -26,15 +26,15 @@ __global__ void MatrixMultiply(float *d_A, float *d_B, float *d_C)
 __global__ void dft(double*x, double*Xre, double*Xim){
 	//Credit to Shengfeng Chen from 
 	//https://cs.wmich.edu/gupta/teaching/cs5260/5260Sp15web/studentProjects/IMPLEMENTATION%20of%20DFT%20in%20CPU%20and%20GPU%20by%20Shengfeng.pdf
-	__shared__ double cache[2*N];
+	__shared__ double cache[2*(N-1)];
 	int n = threadIdx.x, k=blockIdx.x, cacheIndex = threadIdx.x;
 //	Matrix computation for Xim and Xre
 	double temp1=0,temp2=0;
-	while(n<N && k<N){
-		temp1 += x[n] * cos(n*k*(M_PI*2) / N);
-		temp2 -= x[n] * sin(n*k*(M_PI*2) / N);
-		n+=N; k+=N;
-	}
+	//while(n<N && k<N){
+	temp1 += x[n] * cos((n*k*(M_PI*2)) / N);
+	temp2 -= x[n] * sin((n*k*(M_PI*2)) / N);
+	//	n+=N; k+=N;
+	//}
 	cache[cacheIndex] = temp1;
 	cache[cacheIndex+blockDim.x] = temp2;
 	__syncthreads();
@@ -51,10 +51,19 @@ __global__ void dft(double*x, double*Xre, double*Xim){
 		Xre[blockIdx.x] = cache[0];
 		Xim[blockIdx.x] = cache[blockDim.x];}
 }
+__global__ void fft(double*x, double*Xre, double*Xim){
+	int x = threadIdx.x, y=threadIdx.y;
+	temp = 0;
+	__shared__ double cache[log(N)*N];
+
+	if(x==(log(N)-1)){
+		
+	}
+}
 
 int main(){
 
-	int i,j;
+	int i;
 	
 	double *d_X, *d_Xre, *d_Xim;	
 	double *h_X, *h_Xre, *h_Xim;
@@ -78,20 +87,17 @@ int main(){
 	
 	//Initialize matrices on the host
 	for(i=0;i<N;i++){
-	    for(j=0;j<N;j++){
-		h_X[i*N+j]=i;
-	    }
+		h_X[i]=sin(i);
 	}
 
 
 	//Allocate X to the Device
 	cudaMemcpy(d_X, h_X, size, cudaMemcpyHostToDevice);
-	//cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
 
 
 	//Invoke kernel
-	dim3 blockPerGrid(N,1);
-	dim3 threadPerBlock(N,1);
+	dim3 blockPerGrid(N-1);
+	dim3 threadPerBlock(N-1);
 
 	//cudaEventRecord(start);	
 	//MatrixMultiply<<<blockPerGrid, threadPerBlock>>>(d_A, d_B, d_C);
@@ -122,12 +128,14 @@ int main(){
 		test_Xim[k]=0;
 		for(int n=0;n<N;n++){
 			test_Xre[k]+=h_X[n]*cos(n*k*M_PI*2 / N);
-			test_Xim[k]+=h_X[n]*cos(n*k*M_PI*2 / N);
+			test_Xim[k]-=h_X[n]*sin(n*k*M_PI*2 / N);
 		}
 	}
 	int compare_Xre = 0;
 	int compare_Xim = 0;
 	for(i=0;i<N;i++){
+		printf("XRE: test: %f comp: %f\n",test_Xre[i],h_Xre[i]);
+		printf("XIM: test: %f comp: %f\n\n",test_Xim[i],h_Xim[i]);
 		if(test_Xre[i]==h_Xre[i]) compare_Xre++;
 		if(test_Xim[i]==h_Xim[i]) compare_Xim++;
 	}
